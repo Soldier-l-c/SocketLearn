@@ -1,5 +1,5 @@
 #include "pch.h"
-
+#include <algorithm>
 void InitLogger()
 {
 	static std::once_flag flag;
@@ -45,11 +45,7 @@ int test()
     struct sockaddr_in serv_addr;
 
     conn_fd = socket(AF_INET, SOCK_STREAM, 0);/*socket创建客户端的描述符*/
-    if (conn_fd < 0)
-    {
-        printf("create client socket failure:%d\n", (errno));
-        return -1;
-    }
+    if (conn_fd < 0)return 1;
 
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
@@ -57,31 +53,28 @@ int test()
     serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");/*将点分十进制转换成32位整型类型*/
 
     if (connect(conn_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)/*连接服务器*/
+        return 2;
+
+    while (true)
     {
-        printf("client[%d] connect to server[%s:%d] failure:%d\n", conn_fd, "127.0.0.1", 8888, (errno));
-        return -1;
+        std::string data;
+        std::cin >> data;
+        if (data == "exit")break;
+
+        data = helper::String::cp_to_cp(data.c_str(), GetACP(), CP_UTF8);
+        LOG(INFO) << data;
+        if (send(conn_fd, data.c_str(), data.length(), 0) < 0)
+            break;
+
+        memset(buf, 0, sizeof(buf));
+        rv = recv(conn_fd, buf, sizeof(buf)-1, 0);
+        if (rv <= 0)break;
+        buf[rv] = 0;
+
+        LOG(INFO) << "Read[" << rv << "]bytes from server:[" << buf << "]";
     }
 
-    auto data = GetFormatTime();
-    if (send(conn_fd, data.c_str(), data.length(), 0) < 0)
-    {
-        printf("write data to server[%s,%d] failure:%d\n", "127.0.0.1", 8888, (errno));
-        return -2;
-    }
-
-    memset(buf, 0, sizeof(buf));
-    rv = recv(conn_fd, buf, sizeof(buf), 0);
-    if (rv < 0)
-    {
-        printf("read data from server failure:%d\n", (errno));
-        return -3;
-    }
-    else if (rv == 0)
-    {
-        printf("client connetc to server get disconnect\n");
-        return -4;
-    }
-    printf("read %d bytes from server:'%s'\n", rv, buf);
+    closesocket(conn_fd);
 
     return 0;
 }
@@ -89,6 +82,8 @@ int test()
 int main()
 {
 	InitLogger();
+    std::vector<int>v{ 1,2 };
+    Solution().maxmiumScore(v, 1);
     WSASocketHelper wsa_helper;
-    test();
+    return test();
 }

@@ -21,6 +21,9 @@ struct SocketInfo
 	}
 };
 
+using SocketInfoPtr = std::shared_ptr<SocketInfo>;
+using SocketInfoList = std::vector<SocketInfoPtr>;
+
 class SocketCallback :public ISocketCallback, public std::enable_shared_from_this<SocketCallback>
 {
 public:
@@ -30,15 +33,18 @@ public:
 
 	virtual uint32_t OnStop();
 
+private:
 	void StartSelect();
 
-private:
+	bool Select(const SocketInfoList& socket_list);
 
+private:
 	void OnClientClosed(SOCKET s);
 
 public:
 	std::mutex client_fd_lock_;
 	std::condition_variable cv_fd_list_;
-	std::vector<SocketInfo> client_fd_list_;
+	SocketInfoList client_fd_list_;
 	std::atomic_bool stop_{ false };
+	std::future<void> future_;
 };

@@ -3,11 +3,11 @@
 
 uint32_t SocketCallback::OnClientAccept(SOCKET client, const char* addr, const uint16_t port)
 {
-	LOG(INFO) << "Accept from:[" << addr << ":" << port << "]";
+	LOG(INFO) << "Accept from:[" << addr << ":" << port << "] client fd:[" << client << "]";
 
 	std::unique_lock<std::mutex> lock(client_fd_lock_);
 
-	client_fd_list_.emplace_back(SocketInfo{ client, addr,port });
+	client_fd_list_.emplace_back(std::make_shared<SocketInfo>( client, addr,port));
 
 	cv_fd_list_.notify_all();
 
@@ -15,7 +15,7 @@ uint32_t SocketCallback::OnClientAccept(SOCKET client, const char* addr, const u
 }
 uint32_t SocketCallback::OnServerCreated()
 {
-	thread_pool::ThreadPool::instance().CommitTask(
+	future_ = thread_pool::ThreadPool::instance().CommitTask(
 		[self = shared_from_this()] 
 		{
 			self->StartSelect();
@@ -26,9 +26,17 @@ uint32_t SocketCallback::OnServerCreated()
 
 uint32_t SocketCallback::OnStop()
 {
+	if (stop_)return 0;
+
 	stop_ = true;
-	std::unique_lock<std::mutex> lock(client_fd_lock_);
-	cv_fd_list_.notify_all();
+	
+	{
+		std::unique_lock<std::mutex> lock(client_fd_lock_);
+		cv_fd_list_.notify_all();
+	}
+
+	future_.get();
+
 	return 0;
 }
 
@@ -47,59 +55,69 @@ void SocketCallback::StartSelect()
 			if (stop_)break;
 			temp_list = client_fd_list_;
 		}
-		
-		fd_set client_set;
-		FD_ZERO(&client_set);
-		SOCKET max_fd{ 0 };
 
-		for (auto s : temp_list)
-		{
-			FD_SET(s, &client_set);
-			max_fd = max(s, max_fd);
-		}
-
-		timeval val;
-		val.tv_sec = 0;
-		val.tv_usec = 100;
-		const auto sres = select(max_fd + 1, &client_set, nullptr, nullptr, &val);
-		if (sres < 0)break;
-		if (sres == 0)continue;
-
-		auto readnum{ 0 };
-		for (auto s : temp_list)
-		{
-			static const int32_t buff_len{ 1025 };
-			char buff[buff_len]{ 0 };
-			if (FD_ISSET(s, &client_set))
-			{
-				auto read_len = recv(s, buff, buff_len-1, 0);
-				if (read_len <= 0)
-				{
-					OnClientClosed(s);
-					continue;
-				}
-
-				buff[read_len] = 0;
-				LOG(INFO) << "Recive data from:[" << s.addr << "] port:[" << s.port << "] data:[" << buff << "]";
-				send(s, "hello", strlen("hello"), 0);
-			}
-		}
+		if (!Select(temp_list))break;
 	}
 
 	std::unique_lock<std::mutex> lock(client_fd_lock_);
-	for (auto s : client_fd_list_)
+	for (const auto& s : client_fd_list_)
 	{
-		closesocket(s);
+		closesocket(s->sk);
 	}
+}
+
+bool SocketCallback::Select(const SocketInfoList& socket_list)
+{
+	fd_set client_set;
+	FD_ZERO(&client_set);
+	SOCKET max_fd{ 0 };
+
+	for (const auto& s : socket_list)
+	{
+		FD_SET(s->sk, &client_set);
+		max_fd = max(s->sk, max_fd);
+	}
+
+	timeval val;
+	val.tv_sec = 0;
+	val.tv_usec = 100;
+	const auto sres = select(max_fd + 1, &client_set, nullptr, nullptr, &val);
+	if (sres < 0)return false;
+	if (sres == 0)return true;
+
+	auto readnum{ 0 };
+	for (const auto& s : socket_list)
+	{
+		static const int32_t buff_len{ 10 };
+		char buff[buff_len]{ 0 };
+		if (FD_ISSET(s->sk, &client_set))
+		{
+			auto read_len = recv(s->sk, buff, buff_len - 1, 0);
+			if (read_len <= 0)
+			{
+				OnClientClosed(s->sk);
+				continue;
+			}
+
+			buff[read_len] = 0;
+			LOG(INFO) << "Recive data from:[" << s->addr << "] port:[" << s->port << "] data:[" <<  buff << "]";
+			send(s->sk, "hello", strlen("hello"), 0);
+		}
+	}
+
+	return true;
 }
 
 void SocketCallback::OnClientClosed(SOCKET s)
 {
 	std::unique_lock<std::mutex> lock(client_fd_lock_);
-	auto iter = std::find(client_fd_list_.begin(), client_fd_list_.end(), s);
+	auto iter = std::find_if(client_fd_list_.begin(), client_fd_list_.end(), [s] (const SocketInfoPtr& info)
+		{
+			return info->sk == s;
+		});
 	if (iter != client_fd_list_.end())
 	{
-		LOG(INFO) << "Client disconnect! from:[" << iter->addr << "] port:[" << iter->port << "]";
+		LOG(INFO) << "Client disconnect! from:[" << (*iter)->addr << "] port:[" << (*iter)->port << "]";
 		client_fd_list_.erase(iter);
 	}
 	closesocket(s);

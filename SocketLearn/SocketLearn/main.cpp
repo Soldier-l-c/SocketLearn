@@ -46,7 +46,18 @@ int main()
 
 	LOG(INFO) << "Server Start.";
 	
-	SocketServer().CreateServer("127.0.0.1", 8888, std::make_shared<SocketCallback>());
+    SocketServer server;
+
+    auto res = thread_pool::ThreadPool::instance().CommitTask([&server] 
+        {
+            return server.CreateServer("127.0.0.1", 8888, std::make_shared<SocketCallback>());
+        });
+
+    res.get();
 
 	LOG(INFO) << "Server Stop.";
+
+    system("pause");
+
+    return 0;
 }

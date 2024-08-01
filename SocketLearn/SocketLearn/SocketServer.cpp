@@ -15,7 +15,6 @@ bool SocketServer::CreateServer(const std::string& addr, uint16_t port, ISocketC
 	call_back->OnServerCreated();
 
 	Listen(listen_fd);
-	closesocket(listen_fd);
 
 	Stop();
 
@@ -24,10 +23,13 @@ bool SocketServer::CreateServer(const std::string& addr, uint16_t port, ISocketC
 
 void SocketServer::Stop()
 {
+	if (stop_)return;
+
 	stop_ = true;
 	if (listen_socket_ >= 0)
 	{
 		closesocket(listen_socket_);
+		listen_socket_ = 0;
 	}
 
 	if (call_back_)
@@ -83,8 +85,8 @@ bool SocketServer::Listen(SOCKET listen_fd)
 		struct sockaddr_in cli_addr;
 		memset(&cli_addr, 0, sizeof(cli_addr));
 		socklen_t cliaddr_len{ sizeof(cli_addr) };
-		auto client_fd = accept(listen_fd, (sockaddr*)&cli_addr, &cliaddr_len);
-		if (client_fd < 0)break;
+		int client_fd = accept(listen_fd, (sockaddr*)&cli_addr, &cliaddr_len);
+		if (client_fd <= 0)break;
 
 		if (call_back_)
 		{
