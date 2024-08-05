@@ -82,8 +82,6 @@ int test()
 int main()
 {
 	InitLogger();
-    std::vector<int>v{ 1,2 };
-    Solution().maxmiumScore(v, 1);
     WSASocketHelper wsa_helper;
     return test();
 }

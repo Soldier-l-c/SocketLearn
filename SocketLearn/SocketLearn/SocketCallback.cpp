@@ -75,7 +75,7 @@ bool SocketCallback::Select(const SocketInfoList& socket_list)
 	for (const auto& s : socket_list)
 	{
 		FD_SET(s->sk, &client_set);
-		max_fd = max(s->sk, max_fd);
+		max_fd = std::max(s->sk, max_fd);
 	}
 
 	timeval val;
@@ -88,7 +88,7 @@ bool SocketCallback::Select(const SocketInfoList& socket_list)
 	auto readnum{ 0 };
 	for (const auto& s : socket_list)
 	{
-		static const int32_t buff_len{ 10 };
+		static const int32_t buff_len{ 2048 };
 		char buff[buff_len]{ 0 };
 		if (FD_ISSET(s->sk, &client_set))
 		{

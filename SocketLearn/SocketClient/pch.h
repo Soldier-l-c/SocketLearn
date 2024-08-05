@@ -6,6 +6,7 @@
 #endif
 #include <helper/util_string.h>
 #include <logger/console_logger.h>
+#include <helper/util_time.h>
 #define  _CRT_SECURE_NO_WARNINGS
 #define LOG LOG_CMD
 extern console_logger::ILoggerPtr g_logger;
